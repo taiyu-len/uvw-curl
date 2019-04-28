@@ -1,4 +1,6 @@
 #include "uvw_curl.hpp"
+#include "log.hpp"
+
 #include <iostream>
 #include <uvw/poll.hpp>
 #include <algorithm>
@@ -18,7 +20,7 @@ static void uvwcurl_start_timeout(CURLM* multi, long timeout_ms, void* userp);
 
 CurlGlobal::CurlGlobal(long flags)
 {
-	printf("Init Curl Global State\n");
+	TRACE() << "Init Curl Global State";
 	if (curl_global_init(flags)) {
 		throw std::runtime_error("Unable to initialize curl");
 	}
@@ -26,14 +28,14 @@ CurlGlobal::CurlGlobal(long flags)
 
 CurlGlobal::~CurlGlobal()
 {
-	printf("Cleanup Curl Global State\n");
+	TRACE() << "Cleanup Curl Global State";
 	curl_global_cleanup();
 }
 
 /// Initialize Curl Multi handle and timer
 CurlMulti::CurlMulti(uvw::Loop& loop, CurlGlobal const&)
 : loop(loop) {
-	printf("Init Curl Multi Handle\n");
+	TRACE() << "Initialize Curl Multi Handle";
 	if ((handle = curl_multi_init()) == nullptr) {
 		throw std::runtime_error("curl multi init failed");
 	}
@@ -63,13 +65,13 @@ CurlMulti::CurlMulti(uvw::Loop& loop, CurlGlobal const&)
 
 CurlMulti::~CurlMulti() noexcept
 {
-	printf("Cleanup Curl Multi Handle\n");
+	TRACE() << "Cleanup Curl Multi Handle";
 	curl_multi_cleanup(handle);
 }
 
 void CurlMulti::add_handle(CurlEasy ceasy)
 {
-	printf("Adding easy handle\n");
+	TRACE() << "Add Easy Handle";
 	auto* easy = ceasy.release();
 	curl_multi_add_handle(handle, easy);
 }
@@ -80,10 +82,12 @@ void CurlMulti::check_info()
 	int pending;
 	while ((message = curl_multi_info_read(handle, &pending))) {
 		switch (message->msg) {
-		case CURLMSG_DONE:
+		case CURLMSG_DONE: {
+			TRACE() << "Finished download";
 			auto* easy_handle = message->easy_handle;
 			curl_multi_remove_handle(handle, easy_handle);
 			curl_easy_cleanup(easy_handle);
+		}
 		}
 	}
 }
@@ -137,7 +141,7 @@ struct CurlContext
 	, s(s)
 	, poll(state.loop.resource<uvw::PollHandle>(s))
 	{
-		printf("Create Context: socket(%d)\n", s);
+		TRACE() << "Create Context for socket " << s;
 		// add this to socket state
 		curl_multi_assign(state.handle, s, static_cast<void*>(this));
 		// delete self in poll close event
@@ -156,7 +160,8 @@ struct CurlContext
 			if (e.flags & uvw::PollHandle::Event::WRITABLE) {
 				flags |= CURL_CSELECT_OUT;
 			}
-			printf("PollEvent %d (%d)\n", flags, this->s);
+			TRACE() << "Poll event " << flags
+				<< " for socket " << this->s;
 			curl_multi_socket_action(
 				this->state.handle, this->s, flags,
 				&running_handles);
@@ -165,7 +170,7 @@ struct CurlContext
 	}
 	~CurlContext() noexcept
 	{
-		printf("Delete Context\n");
+		TRACE() << "Delete Context for socket " << s;
 		// remove this context for socket s
 		curl_multi_assign(state.handle, s, nullptr);
 	}
@@ -183,16 +188,15 @@ int uvwcurl_handle_socket(
 	auto* state   = static_cast<CurlMulti*>(userp);
 	auto* context = static_cast<CurlContext*>(socketp);
 	auto events = int();
+	const char* act_str;
 	switch (action) {
-	case CURL_POLL_IN:
-		printf("POLL_IN (%d)\n", s); break;
-	case CURL_POLL_OUT:
-		printf("POLL_OUT (%d)\n", s); break;
-	case CURL_POLL_INOUT:
-		printf("POLL_INOUT (%d)\n", s); break;
-	case CURL_POLL_REMOVE:
-		printf("POLL_REMOVE (%d)\n", s); break;
+	case CURL_POLL_IN:     act_str = "POLL_IN "; break;
+	case CURL_POLL_OUT:    act_str = "POLL_OUT "; break;
+	case CURL_POLL_INOUT:  act_str = "POLL_INOUT "; break;
+	case CURL_POLL_REMOVE: act_str = "POLL_REMOVE "; break;
+	default: act_str = "Unknown Poll"; break;
 	}
+	TRACE() << act_str << s;
 
 	switch (action) {
 	case CURL_POLL_IN:

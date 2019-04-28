@@ -3,12 +3,15 @@
 #include <curl/curl.h>
 #include <stdexcept>
 #include <memory>
-struct CurlGlobal; ///< Manages curl global state, used to create multi handles
+struct CurlGlobal; ///< Manages curl global state
 struct CurlMulti;  ///< Manages curl multi handle and uvw timer
 struct CurlEasy;   ///< Wrapper around a curl easy request
 
+/// RAII wrapper for curl global state.
 struct CurlGlobal
 {
+	/// @param  flags flags passed to curl_global_init
+	/// @throws std::runtime_error on failure to initialize
 	CurlGlobal(long flags = CURL_GLOBAL_DEFAULT);
 	~CurlGlobal();
 };
