@@ -4,146 +4,175 @@
 #include <iostream>
 #include <uvw/poll.hpp>
 #include <algorithm>
-/// @param easy  handle for single request
-/// @param s socket for request
-/// @param action what action is being taken for request
-/// @param userp Pointer to CurlMulti
-/// @param socketp Pointer to CurlContext
-static int uvwcurl_handle_socket(
-	CURL* easy, curl_socket_t s, int action, void* userp, void* socketp);
 
-///@param multi handle for all multi requests
-///@param timeout_ms timeout in milliseconds
-///@param userp contains pointer to CurlState
-/// starts uv timer for multi handle
-static void uvwcurl_start_timeout(CURLM* multi, long timeout_ms, void* userp);
-
-CurlGlobal::CurlGlobal(long flags)
+namespace uvw_curl
 {
-	TRACE() << "Init Curl Global State";
+
+///////////////////////////////////////////////////////////////////////////////
+// CurlGlobal
+
+std::shared_ptr<CurlGlobal>
+CurlGlobal::create(long flags)
+{
 	if (curl_global_init(flags)) {
-		throw std::runtime_error("Unable to initialize curl");
+		return nullptr;
+	} else {
+		return std::make_shared<CurlGlobal>();
 	}
 }
 
 CurlGlobal::~CurlGlobal()
 {
-	TRACE() << "Cleanup Curl Global State";
 	curl_global_cleanup();
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// CurlMulti
+
+static void start_timeout(CURLM*, long, void*) noexcept;
+static int  handle_socket(CURL*, curl_socket_t, int, void*, void*) noexcept;
+
 /// Initialize Curl Multi handle and timer
-CurlMulti::CurlMulti(uvw::Loop& loop, CurlGlobal const&)
-: loop(loop) {
-	TRACE() << "Initialize Curl Multi Handle";
-	if ((handle = curl_multi_init()) == nullptr) {
-		throw std::runtime_error("curl multi init failed");
+std::shared_ptr<CurlMulti>
+CurlMulti::create(
+	std::shared_ptr<uvw::Loop> loop,
+	std::shared_ptr<CurlGlobal> global)
+{
+	auto multi = curl_multi_init();
+	if (multi == nullptr) {
+		return nullptr;
 	}
 
-	// setup socket and timer functions to use with uvw
-	curl_multi_setopt(handle, CURLMOPT_SOCKETFUNCTION, uvwcurl_handle_socket);
-	curl_multi_setopt(handle, CURLMOPT_TIMERFUNCTION, uvwcurl_start_timeout);
+	auto ptr = std::make_shared<CurlMulti>(multi);
 
-	// setup user data to contain pointer to this
-	curl_multi_setopt(handle, CURLMOPT_SOCKETDATA, this);
-	curl_multi_setopt(handle, CURLMOPT_TIMERDATA,  this);
+	// set callback Functions
+	ptr->setopt(CURLMOPT_SOCKETFUNCTION, handle_socket);
+	ptr->setopt(CURLMOPT_TIMERFUNCTION, start_timeout);
+
+	// set user data to contain pointer to multi handle
+	ptr->setopt(CURLMOPT_SOCKETDATA, ptr.get());
+	ptr->setopt(CURLMOPT_TIMERDATA, ptr.get());
 
 	// enable multiplexing
-	curl_multi_setopt(handle, CURLMOPT_PIPELINING,
-			  CURLPIPE_HTTP1 | CURLPIPE_MULTIPLEX);
+	ptr->setopt(CURLMOPT_PIPELINING, CURLPIPE_HTTP1 | CURLPIPE_MULTIPLEX);
 
-	curl_multi_setopt(handle, CURLMOPT_MAXCONNECTS, 10L);
-	timer = loop.resource<uvw::TimerHandle>();
-	timer->on<uvw::TimerEvent>([this](uvw::TimerEvent, uvw::TimerHandle const& x) {
+	ptr->timer = loop->resource<uvw::TimerHandle>();
+	ptr->timer->on<uvw::TimerEvent>(
+	[self = ptr.get()] (uvw::TimerEvent, uvw::TimerHandle const&) {
 		int running_handles;
 		curl_multi_socket_action(
-			this->handle, CURL_SOCKET_TIMEOUT, 0,
+			self->handle.get(), CURL_SOCKET_TIMEOUT, 0,
 			&running_handles);
-		this->check_info();
+		self->check_info();
 	});
+
+	ptr->gstate = std::move(global);
+	return ptr;
 }
+
+CurlMulti::CurlMulti(CURLM* multi) noexcept
+: uvw::Emitter<CurlMulti>{}
+, std::enable_shared_from_this<CurlMulti>{}
+, handle( multi, &curl_multi_cleanup )
+{}
 
 CurlMulti::~CurlMulti() noexcept
 {
-	TRACE() << "Cleanup Curl Multi Handle";
-	curl_multi_cleanup(handle);
+	if (handle) {
+		auto ptr = handle.release();
+		auto err = curl_multi_cleanup(ptr);
+		if (err) {
+			publish(CurlMultiErrorEvent{err});
+		}
+	}
 }
 
-void CurlMulti::add_handle(CurlEasy ceasy)
+void CurlMulti::add_handle(std::shared_ptr<CurlEasy> easy)
 {
-	TRACE() << "Add Easy Handle";
-	auto* easy = ceasy.release();
-	curl_multi_add_handle(handle, easy);
+	easy->multi = shared_from_this();
+	easy->self  = easy->shared_from_this();
+	easy->setopt(CURLOPT_PRIVATE, easy.get());
+
+	auto err = curl_multi_add_handle(handle.get(), easy->handle.get());
+	if (err) {
+		publish(CurlMultiErrorEvent{err});
+	}
 }
 
 void CurlMulti::check_info()
 {
 	CURLMsg *message;
+	CurlEasy *easy;
 	int pending;
-	while ((message = curl_multi_info_read(handle, &pending))) {
+	while ((message = curl_multi_info_read(handle.get(), &pending))) {
 		switch (message->msg) {
-		case CURLMSG_DONE: {
-			TRACE() << "Finished download";
+		case CURLMSG_DONE:
 			auto* easy_handle = message->easy_handle;
-			curl_multi_remove_handle(handle, easy_handle);
-			curl_easy_cleanup(easy_handle);
-		}
+			curl_easy_getinfo(easy_handle, CURLINFO_PRIVATE, &easy);
+			curl_multi_remove_handle(handle.get(), easy_handle);
+			easy->finish();
 		}
 	}
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// CurlEasy
+size_t CurlEasy::write_cb(
+	char *ptr, size_t size, size_t nmemb, void* easyp)
+{
+	auto easy = static_cast<CurlEasy*>(easyp);
+	easy->publish(CurlEasy::DataEvent{ptr, nmemb * size});
+	return nmemb * size;
+}
+
+int CurlEasy::xfer_info_cb(
+	void* easyp,
+	curl_off_t dltotal, curl_off_t dlnow,
+	curl_off_t ultotal, curl_off_t ulnow)
+{
+	auto easy = static_cast<CurlEasy*>(easyp);
+	easy->publish(CurlEasy::XferInfoEvent{dltotal, dlnow, ultotal, ulnow});
+	return 0;
 }
 
 CurlEasy::CurlEasy() noexcept
-: handle( curl_easy_init() )
-{};
-
-CurlEasy::CurlEasy(CurlEasy&& x) noexcept
+: uvw::Emitter<CurlEasy>{}
+, std::enable_shared_from_this<CurlEasy>{}
+, handle( curl_easy_init(), &curl_easy_cleanup )
 {
-	handle = x.handle;
-	x.handle = nullptr;
+	setopt(CURLOPT_WRITEFUNCTION, &write_cb);
+	setopt(CURLOPT_WRITEDATA, this);
+	setopt(CURLOPT_XFERINFOFUNCTION, &xfer_info_cb);
+	setopt(CURLOPT_XFERINFODATA, this);
+	setopt(CURLOPT_NOPROGRESS, 0L);
+};
+
+void CurlEasy::finish() noexcept
+{
+	auto ptr = shared_from_this();
+	self.reset();
+	publish(EndEvent{});
 }
 
-CurlEasy& CurlEasy::operator=(CurlEasy&& x) noexcept
+std::shared_ptr<CurlEasy>
+CurlEasy::create()
 {
-	if (this != &x) {
-		if (handle) {
-			curl_easy_cleanup(handle);
-		}
-		handle = x.handle;
-		x.handle = nullptr;
-	}
-	return *this;
+	return std::make_shared<CurlEasy>();
 }
 
-CurlEasy::~CurlEasy() noexcept
-{
-	if (handle) {
-		curl_easy_cleanup(handle);
-	}
-}
+///////////////////////////////////////////////////////////////////////////////
+// CurlContext
 
-CURL* CurlEasy::release() noexcept
-{
-	auto x = handle;
-	handle = nullptr;
-	return x;
-}
-
-void CurlEasy::reset() noexcept
-{
-	handle = curl_easy_init();
-}
-
-/// Context for easy connection
+/// Context for socket connection
 struct CurlContext
 {
-	CurlContext(CurlMulti& state, curl_socket_t s)
-	: state(state)
+	CurlContext(CurlMulti& multi, curl_socket_t s)
+	: multi(multi)
 	, s(s)
-	, poll(state.loop.resource<uvw::PollHandle>(s))
+	, poll(multi.timer->loop().resource<uvw::PollHandle>(s))
 	{
-		TRACE() << "Create Context for socket " << s;
 		// add this to socket state
-		curl_multi_assign(state.handle, s, static_cast<void*>(this));
+		curl_multi_assign(multi.handle.get(), s, static_cast<void*>(this));
 		// delete self in poll close event
 		poll->on<uvw::CloseEvent>(
 		[this] (uvw::CloseEvent const&, uvw::PollHandle const&) {
@@ -160,51 +189,65 @@ struct CurlContext
 			if (e.flags & uvw::PollHandle::Event::WRITABLE) {
 				flags |= CURL_CSELECT_OUT;
 			}
-			TRACE() << "Poll event " << flags
-				<< " for socket " << this->s;
 			curl_multi_socket_action(
-				this->state.handle, this->s, flags,
+				this->multi.handle.get(), this->s, flags,
 				&running_handles);
-			this->state.check_info();
+			this->multi.check_info();
 		});
 	}
 	~CurlContext() noexcept
 	{
-		TRACE() << "Delete Context for socket " << s;
-		// remove this context for socket s
-		curl_multi_assign(state.handle, s, nullptr);
+		curl_multi_assign(multi.handle.get(), s, nullptr);
 	}
 	CurlMulti&
-		state;
+		multi;
 	curl_socket_t
 		s;
 	std::shared_ptr<uvw::PollHandle>
 		poll;
 };
 
-int uvwcurl_handle_socket(
-	CURL* easy, curl_socket_t s, int action, void* userp, void* socketp)
+/**
+ * @param multi Pointer to Multi Handle
+ * @param timeout_ms time in ms to call on_timeout callback
+ * @param userp Pointer to CurlMulti
+ */
+void start_timeout(CURLM* handle, long timeout_ms, void* userp) noexcept
 {
-	auto* state   = static_cast<CurlMulti*>(userp);
+	auto& multi = *static_cast<CurlMulti*>(userp);
+	if (timeout_ms == -1) {
+		multi.timer->close();
+		return;
+	}
+	if (timeout_ms == 0) {
+		timeout_ms = 1;
+	}
+	auto timeout = uvw::TimerHandle::Time(timeout_ms);
+	auto repeat  = uvw::TimerHandle::Time(0);
+	multi.timer->start(timeout, repeat);
+}
+
+/**
+ * @param easy Easy Handle
+ * @param s    socket for connection
+ * @param action what action we are taking on the socket
+ * @param userp  CurlMulti*
+ * @param socketp CurlContext* or nullptr
+ */
+int handle_socket(
+	CURL* easy, curl_socket_t s, int action,
+	void* userp, void* socketp) noexcept
+{
+	auto* multi   = static_cast<CurlMulti*>(userp);
 	auto* context = static_cast<CurlContext*>(socketp);
 	auto events = int();
-	const char* act_str;
-	switch (action) {
-	case CURL_POLL_IN:     act_str = "POLL_IN "; break;
-	case CURL_POLL_OUT:    act_str = "POLL_OUT "; break;
-	case CURL_POLL_INOUT:  act_str = "POLL_INOUT "; break;
-	case CURL_POLL_REMOVE: act_str = "POLL_REMOVE "; break;
-	default: act_str = "Unknown Poll"; break;
-	}
-	TRACE() << act_str << s;
-
 	switch (action) {
 	case CURL_POLL_IN:
 	case CURL_POLL_OUT:
 	case CURL_POLL_INOUT:
 		// create context to start polling on
 		if (! context) {
-			context = new CurlContext(*state, s);
+			context = new CurlContext(*multi, s);
 		}
 		if (action != CURL_POLL_IN) {
 			events |= UV_WRITABLE;
@@ -222,19 +265,4 @@ int uvwcurl_handle_socket(
 	}
 	return 0;
 }
-
-void uvwcurl_start_timeout(CURLM* multi, long timeout_ms, void* userp)
-{
-	auto& state = *static_cast<CurlMulti*>(userp);
-	if (timeout_ms == -1) {
-		state.timer->close();
-		return;
-	}
-	// set minimum timeout
-	if (timeout_ms == 0) {
-		timeout_ms = 1;
-	}
-	auto timeout = uvw::TimerHandle::Time(timeout_ms);
-	auto repeat  = uvw::TimerHandle::Time(0);
-	state.timer->start(timeout, repeat);
 }

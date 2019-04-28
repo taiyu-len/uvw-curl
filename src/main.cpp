@@ -3,18 +3,20 @@
 #include <iostream>
 #include <thread>
 
-// sample program using uvw and curl to download a file and print it.
-static size_t write_callback(char *ptr, size_t size, size_t nmemb, void* url) {
-	LOG() << nmemb << " bytes recievd from " << static_cast<const char*>(url);
-	return nmemb;
-}
-static void add_download(const char* url, CurlMulti &m) {
-	LOG() << "Adding url" << url;
-	auto easy = CurlEasy();
-	easy.setopt(CURLOPT_URL, url);
-	easy.setopt(CURLOPT_WRITEFUNCTION, write_callback);
-	easy.setopt(CURLOPT_WRITEDATA, static_cast<void const*>(url));
-	//easy.setopt(CURLOPT_MAX_RECV_SPEED_LARGE, (curl_off_t)2000);
+static void add_download(const char* url, uvw_curl::CurlMulti &m) {
+	using namespace uvw_curl;
+	auto easy = CurlEasy::create();
+	easy->setopt(CURLOPT_URL, url);
+	easy->on<CurlEasy::XferInfoEvent>(
+	[](CurlEasy::XferInfoEvent x, CurlEasy &y) {
+		auto url = y.getinfo<const char*>(CURLINFO_EFFECTIVE_URL);
+		LOG() << "Recieved " << x.dlnow << " / " << x.dltotal << " Bytes from " << url;
+	});
+	easy->on<CurlEasy::EndEvent>(
+	[](CurlEasy::EndEvent x, CurlEasy &y) {
+		auto url = y.getinfo<const char*>(CURLINFO_EFFECTIVE_URL);
+		LOG() << "Finished Recieving from " << url;
+	});
 	m.add_handle(std::move(easy));
 }
 
@@ -22,13 +24,14 @@ int main(int argc, char **argv) try {
 	if (argc <= 1) {
 		return 0;
 	}
+	using namespace uvw_curl;
+
 	auto loop = uvw::Loop::getDefault();
-	auto curlg = CurlGlobal();
-	auto curlm = CurlMulti(*loop, curlg);
+	auto multi = CurlMulti::create(loop, CurlGlobal::create());
 	for (int i = 1; i < argc; ++i) {
-		add_download(argv[i], curlm);
+		add_download(argv[i], *multi);
 	}
-	LOG() << "Running loop";
+	TRACE() << "Running loop";
 	//std::thread a([&]{ loop->run(); });
 	loop->run();
 	//a.join();
