@@ -2,25 +2,23 @@
 #include <curl/curl.h>
 namespace uvw_curl
 {
-auto Global::create() -> std::shared_ptr<Global>
-{
-	return Global::create(CURL_GLOBAL_DEFAULT);
-}
+Global::Global(Key k) noexcept : Global(k, CURL_GLOBAL_DEFAULT) {}
 
-auto Global::create(long flags) -> std::shared_ptr<Global>
-{
-	return curl_global_init(flags)
-		? nullptr
-		: std::make_shared<Global>(Key{});
-}
-
-Global::Global(Key x) noexcept
-: CreateLock<Global>(x)
-, std::enable_shared_from_this<Global>()
+Global::Global(Key, long flags) noexcept
+: std::enable_shared_from_this<Global>()
+, initialized(curl_global_init(flags) == 0)
 {}
 
 Global::~Global() noexcept
 {
-	curl_global_cleanup();
+	if (initialized)
+	{
+		curl_global_cleanup();
+	}
 }
+
+bool Global::init() const noexcept
+{
+	return initialized;
 }
+} // namespace uvw_curl

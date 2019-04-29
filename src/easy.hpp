@@ -25,8 +25,6 @@ struct Easy
 	struct DataEvent { char const* data; size_t length; };
 	struct XferInfoEvent { curl_off_t dltotal, dlnow, ultotal, ulnow; };
 
-	static auto create() -> std::shared_ptr<Easy>;
-
 	Easy(Key) noexcept;
 	~Easy() noexcept = default;
 

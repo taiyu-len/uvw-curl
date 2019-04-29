@@ -1,16 +1,17 @@
 #ifndef UVW_CURL_CONTEXT_HPP
 #define UVW_CURL_CONTEXT_HPP
 /// Private Header
-#include "multi.hpp"
+#include "create_lock.hpp"
 #include "easy.hpp"
+#include "multi.hpp"
 #include <curl/curl.h>
 #include <uvw/poll.hpp>
 
 namespace uvw_curl
 {
-struct Context
+struct Context : public CreateLock<Context>
 {
-	Context(Multi& multi, curl_socket_t s) noexcept;
+	Context(Key, Multi&, curl_socket_t) noexcept;
 	~Context() noexcept;
 
 	Multi&

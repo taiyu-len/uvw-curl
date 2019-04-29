@@ -1,51 +1,37 @@
+#include "context.hpp"
 #include "easy.hpp"
 #include "global.hpp"
-#include "multi.hpp"
-#include "context.hpp"
 #include "log.hpp"
+#include "multi.hpp"
 
 namespace uvw_curl
 {
-auto Multi::create(
-	std::shared_ptr<uvw::Loop> loop,
-	std::shared_ptr<Global> global)
-	-> std::shared_ptr<Multi>
+Multi::Multi(
+	Key,
+	std::shared_ptr<uvw::Loop> const& loop,
+	std::shared_ptr<Global> global) noexcept
+: uvw::Emitter<Multi>()
+, std::enable_shared_from_this<Multi>()
+, _handle(curl_multi_init(), &curl_multi_cleanup)
+, _timer(loop->resource<uvw::TimerHandle>())
+, _global(std::move(global))
 {
 	TRACE() << "Creating multi";
-	auto multi = curl_multi_init();
-	if (multi == nullptr)
-	{
-		return nullptr;
-	}
-	auto ptr = std::make_shared<Multi>(Key{});
-	ptr->_handle.reset(multi);
-
 	// set up callbacks
-	curl_multi_setopt(multi, CURLMOPT_SOCKETFUNCTION, handle_socket);
-	curl_multi_setopt(multi, CURLMOPT_SOCKETDATA, ptr.get());
-	curl_multi_setopt(multi, CURLMOPT_TIMERFUNCTION, start_timeout);
-	curl_multi_setopt(multi, CURLMOPT_TIMERDATA, ptr.get());
+	curl_multi_setopt(_handle.get(), CURLMOPT_SOCKETFUNCTION, handle_socket);
+	curl_multi_setopt(_handle.get(), CURLMOPT_SOCKETDATA, this);
+	curl_multi_setopt(_handle.get(), CURLMOPT_TIMERFUNCTION, start_timeout);
+	curl_multi_setopt(_handle.get(), CURLMOPT_TIMERDATA, this);
 
 	// setup timer event handler
-	ptr->_timer = loop->resource<uvw::TimerHandle>();
-	ptr->_timer->on<uvw::TimerEvent>(
-	[self = ptr.get()] (auto const&, auto const&) {
+	_timer->on<uvw::TimerEvent>(
+	[this] (auto const&, auto const&) {
 		int running;
 		curl_multi_socket_action(
-			self->_handle.get(), CURL_SOCKET_TIMEOUT, 0, &running);
-		self->check_info();
+			_handle.get(), CURL_SOCKET_TIMEOUT, 0, &running);
+		check_info();
 	});
-
-	ptr->_global = std::move(global);
-	return ptr;
 }
-
-Multi::Multi(Key x) noexcept
-: CreateLock<Multi>(x)
-, uvw::Emitter<Multi>()
-, std::enable_shared_from_this<Multi>()
-, _handle(nullptr, &curl_multi_cleanup)
-{}
 
 Multi::~Multi() noexcept
 {
@@ -61,16 +47,24 @@ Multi::~Multi() noexcept
 	}
 }
 
+bool Multi::init() const noexcept
+{
+	return bool(_handle);
+}
+
 void Multi::add_handle(std::shared_ptr<Easy> easy) noexcept
 {
 	TRACE() << "Add Handle";
 	easy->_multi = shared_from_this();
-	easy->_self  = easy->shared_from_this();
 	curl_easy_setopt(easy->_handle.get(), CURLOPT_PRIVATE, easy.get());
 	auto err = curl_multi_add_handle(_handle.get(), easy->_handle.get());
 	if (err)
 	{
 		publish(ErrorEvent{err});
+	}
+	else
+	{
+		easy->_self = std::move(easy);
 	}
 }
 
@@ -84,20 +78,18 @@ void Multi::check_info() noexcept
 	int pending;
 	while ((message = curl_multi_info_read(_handle.get(), &pending)))
 	{
-		switch (message->msg)
+		if (message->msg == CURLMSG_DONE)
 		{
-		case CURLMSG_DONE:
 			auto* easy_handle = message->easy_handle;
 			Easy* easy;
 			curl_easy_getinfo(easy_handle, CURLINFO_PRIVATE, &easy);
 			curl_multi_remove_handle(_handle.get(), easy_handle);
 			easy->finish();
-			break;
 		}
 	}
 }
 
-void Multi::start_timeout(CURLM* handle, long timeout, Multi* multi) noexcept
+void Multi::start_timeout(CURLM*, long timeout, Multi* multi) noexcept
 {
 	if (timeout == -1)
 	{
@@ -114,7 +106,7 @@ void Multi::start_timeout(CURLM* handle, long timeout, Multi* multi) noexcept
 }
 
 int Multi::handle_socket(
-	CURL* easy, curl_socket_t s, int action,
+	CURL*, curl_socket_t s, int action,
 	Multi* multi, Context* context) noexcept
 {
 	TRACE() << "Handle socket " << s;
@@ -125,7 +117,7 @@ int Multi::handle_socket(
 	case CURL_POLL_INOUT:
 		// create context to start polling on
 		if (context == nullptr) {
-			context = new Context(*multi, s);
+			context = Context::create_raw(*multi, s);
 		}
 		if (action != CURL_POLL_IN) {
 			events |= UV_WRITABLE;
@@ -140,7 +132,8 @@ int Multi::handle_socket(
 		context->poll->stop();
 		context->poll->close();
 		break;
+	default: break;
 	}
 	return 0;
 }
-}
+} // namespace uvw_curl

@@ -5,7 +5,8 @@ static size_t depth = 0;
 
 std::ostream& log_depth(std::ostream& os)
 {
-	int i = 20;
+	const int WIDTH = 20;
+	int i = WIDTH;
 	while (--i > depth) {
 		os << ' ';
 	}
@@ -31,4 +32,4 @@ tracer_t::~tracer_t()
 {
 	--depth;
 }
-}
+} // namespace uvw_curl

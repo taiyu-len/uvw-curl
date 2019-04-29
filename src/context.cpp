@@ -1,8 +1,9 @@
 #include "context.hpp"
 #include "log.hpp"
+#include <memory>
 namespace uvw_curl
 {
-Context::Context(Multi& multi, curl_socket_t s) noexcept
+Context::Context(Key, Multi& multi, curl_socket_t s) noexcept
 : multi(multi)
 , s(s)
 , poll(multi._timer->loop().resource<uvw::PollHandle>(s))
@@ -29,9 +30,10 @@ Context::Context(Multi& multi, curl_socket_t s) noexcept
 		this->multi.check_info();
 	});
 }
+
 Context::~Context() noexcept
 {
 	TRACE() << "Destroy context for " << s;
 	curl_multi_assign(multi._handle.get(), s, nullptr);
 }
-}
+} // namespace uvw_curl

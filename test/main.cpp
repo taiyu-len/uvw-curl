@@ -12,7 +12,7 @@ static void add_download(const char* url, uvw_curl::Multi &m) {
 		LOG() << "Recieved " << x.length << " Bytes from " << y.url();
 	});
 	easy->on<Easy::EndEvent>(
-	[](Easy::EndEvent x, Easy &y) {
+	[](Easy::EndEvent, Easy &y) {
 		LOG() << "Finished Recieving from " << y.url();
 	});
 	easy->on<Easy::ErrorEvent>(

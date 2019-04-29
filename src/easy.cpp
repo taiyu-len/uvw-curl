@@ -1,18 +1,12 @@
 #include "easy.hpp"
-#include "multi.hpp"
 #include "log.hpp"
+#include "multi.hpp"
 
 namespace uvw_curl
 {
-auto Easy::create() -> std::shared_ptr<Easy>
-{
-	TRACE() << "Creating easy";
-	return std::make_shared<Easy>(Key{});
-}
 
 Easy::Easy(Key x) noexcept
-: CreateLock<Easy>(x)
-, uvw::Emitter<Easy>()
+: uvw::Emitter<Easy>()
 , std::enable_shared_from_this<Easy>()
 , _handle(curl_easy_init(), &curl_easy_cleanup)
 {
@@ -58,4 +52,4 @@ void Easy::finish() noexcept
 	_self.reset();
 	publish(EndEvent{});
 }
-}
+} // namespace uvw_curl

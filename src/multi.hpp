@@ -26,12 +26,13 @@ struct Multi
 		CURLMcode code;
 		const char* what() const noexcept { return curl_multi_strerror(code); }
 	};
-
-	static auto create(std::shared_ptr<uvw::Loop>, std::shared_ptr<Global>)
-		-> std::shared_ptr<Multi>;
-
-	Multi(Key) noexcept;
+	Multi(
+		Key,
+		std::shared_ptr<uvw::Loop> const&,
+		std::shared_ptr<Global>) noexcept;
 	~Multi() noexcept;
+
+	bool init() const noexcept;
 
 	/**  Add easy handle to this multi handle */
 	void add_handle(std::shared_ptr<Easy>) noexcept;

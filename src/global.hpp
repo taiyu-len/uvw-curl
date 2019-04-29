@@ -9,11 +9,12 @@ struct Global
 	: public CreateLock<Global>
 	, public std::enable_shared_from_this<Global>
 {
-	static auto create(long flags) -> std::shared_ptr<Global>;
-	static auto create()           -> std::shared_ptr<Global>;
-
+	Global(Key, long flags) noexcept;
 	Global(Key) noexcept;
 	~Global() noexcept;
+
+	bool init() const noexcept;
+	bool initialized;
 };
-}
+} // namespace uvw_curl
 #endif // UVW_CURL_GLOBAL_HPP
