@@ -50,8 +50,14 @@ public:
 	}
 
 private:
-	static bool try_init(T &x, std::true_type)  noexcept { return x.init(); }
-	static bool try_init(T &x, std::false_type) noexcept { return true; }
+	static bool try_init(T &x, std::true_type) noexcept
+	{
+		return x.init();
+	}
+	static bool try_init(T &x, std::false_type) noexcept
+	{
+		return true;
+	}
 };
 } // namespace uvw_curl
 #endif // UVW_CURL_CREATE_LOCK_HPP

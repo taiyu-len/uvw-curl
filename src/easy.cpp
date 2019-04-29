@@ -5,7 +5,7 @@
 namespace uvw_curl
 {
 
-Easy::Easy(Key x) noexcept
+Easy::Easy(Key) noexcept
 : uvw::Emitter<Easy>()
 , std::enable_shared_from_this<Easy>()
 , _handle(curl_easy_init(), &curl_easy_cleanup)
