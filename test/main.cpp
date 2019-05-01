@@ -2,6 +2,7 @@
 #include "log.hpp"
 #include <iostream>
 #include <thread>
+#include <iomanip>
 
 static void add_download(const char* url, uvw_curl::Multi &m) {
 	using namespace uvw_curl;
@@ -9,7 +10,7 @@ static void add_download(const char* url, uvw_curl::Multi &m) {
 	easy->url(url);
 	easy->on<Easy::DataEvent>(
 	[](Easy::DataEvent x, Easy &y) {
-		LOG() << "Recieved " << x.length << " Bytes from " << y.effective_url();
+		LOG() << "Recieved " << std::setw(5) << x.length << " Bytes from " << y.effective_url();
 	});
 	easy->on<Easy::EndEvent>(
 	[](Easy::EndEvent, Easy &y) {
