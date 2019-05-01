@@ -1,7 +1,6 @@
 #include "context.hpp"
 #include "easy.hpp"
 #include "global.hpp"
-#include "log.hpp"
 #include "multi.hpp"
 
 namespace uvw_curl
@@ -16,7 +15,6 @@ Multi::Multi(
 , _timer(loop->resource<uvw::TimerHandle>())
 , _global(std::move(global))
 {
-	TRACE() << "Creating multi";
 	// set up callbacks
 	curl_multi_setopt(_handle.get(), CURLMOPT_SOCKETFUNCTION, handle_socket);
 	curl_multi_setopt(_handle.get(), CURLMOPT_SOCKETDATA, this);
@@ -27,15 +25,18 @@ Multi::Multi(
 	_timer->on<uvw::TimerEvent>(
 	[this] (auto const&, auto const&) {
 		int running;
-		curl_multi_socket_action(
+		auto err = curl_multi_socket_action(
 			_handle.get(), CURL_SOCKET_TIMEOUT, 0, &running);
+		if (err)
+		{
+			publish(ErrorEvent{err});
+		}
 		check_info();
 	});
 }
 
 Multi::~Multi() noexcept
 {
-	TRACE() << "Destroying multi";
 	auto ptr = _handle.release();
 	if (ptr)
 	{
@@ -54,11 +55,10 @@ bool Multi::init() const noexcept
 
 void Multi::add_handle(std::shared_ptr<Easy> easy) noexcept
 {
-	TRACE() << "Add Handle";
 	easy->_multi = shared_from_this();
 	curl_easy_setopt(easy->_handle.get(), CURLOPT_PRIVATE, easy.get());
 	auto err = curl_multi_add_handle(_handle.get(), easy->_handle.get());
-	if (err)
+	if (err != 0)
 	{
 		publish(ErrorEvent{err});
 	}
@@ -83,7 +83,8 @@ void Multi::check_info() noexcept
 			auto* easy_handle = message->easy_handle;
 			Easy* easy;
 			curl_easy_getinfo(easy_handle, CURLINFO_PRIVATE, &easy);
-			curl_multi_remove_handle(_handle.get(), easy_handle);
+			auto err = curl_multi_remove_handle(_handle.get(), easy_handle);
+			publish(ErrorEvent{err});
 			easy->finish();
 		}
 	}
@@ -109,7 +110,6 @@ int Multi::handle_socket(
 	CURL*, curl_socket_t s, int action,
 	Multi* multi, Context* context) noexcept
 {
-	TRACE() << "Handle socket " << s;
 	int events = 0;
 	switch (action) {
 	case CURL_POLL_IN:

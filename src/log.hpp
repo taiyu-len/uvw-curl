@@ -29,6 +29,6 @@ struct tracer_t {
 	tracer_t();
 	~tracer_t();
 };
-}
+} // namespace uvw_curl
 
 #endif // UVW_CURL_LOG_HPP

@@ -41,7 +41,7 @@ static void trace(uvw_curl::Easy::DebugEvent const& x, uvw_curl::Easy const& e)
 	}
 	std::cerr << std::setfill(' ') << std::left;
 	std::cerr << text << " " << std::setw(10) << x.length << " bytes  (";
-	std::cerr << "0x" << std::hex << std::setw(8) << x.length << std::dec << ")\n";
+	std::cerr << "0x" << std::hex << x.length << std::dec << ")\n";
 	dump(std::cerr, x.data, x.length);
 }
 
