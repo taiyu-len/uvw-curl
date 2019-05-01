@@ -9,11 +9,11 @@ static void add_download(const char* url, uvw_curl::Multi &m) {
 	easy->url(url);
 	easy->on<Easy::DataEvent>(
 	[](Easy::DataEvent x, Easy &y) {
-		LOG() << "Recieved " << x.length << " Bytes from " << y.url();
+		LOG() << "Recieved " << x.length << " Bytes from " << y.effective_url();
 	});
 	easy->on<Easy::EndEvent>(
 	[](Easy::EndEvent, Easy &y) {
-		LOG() << "Finished Recieving from " << y.url();
+		LOG() << "Finished Recieving from " << y.effective_url();
 	});
 	easy->on<Easy::ErrorEvent>(
 	[](Easy::ErrorEvent const&e, auto const&) {

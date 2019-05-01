@@ -4,7 +4,8 @@ add_subdirectory(external) # handles external dependencies
 
 string(APPEND CLANG_TIDY_CHECKS *) # all by default
 string(APPEND CLANG_TIDY_CHECKS ,-readability-*)
-string(APPEND CLANG_TIDY_CHECKS ,-fushia-*)
+string(APPEND CLANG_TIDY_CHECKS ,-fuchsia-*)
+string(APPEND CLANG_TIDY_CHECKS ,-google-runtime-int)
 string(APPEND CLANG_TIDY_CHECKS ,-hicpp-signed-bitwise) # allow bitflag macro
 string(APPEND CLANG_TIDY_CHECKS ,-hicpp-vararg)  # allow using c functions
 string(APPEND CLANG_TIDY_CHECKS ,-cppcoreguidelines-pro-type-vararg) # same

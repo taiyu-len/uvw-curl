@@ -2,6 +2,7 @@ target_sources(uvw_curl PRIVATE
 	global.cpp
 	multi.cpp
 	easy.cpp
+	list.cpp
 	context.cpp
 	log.cpp
 )
@@ -9,6 +10,7 @@ set_property(TARGET uvw_curl PROPERTY PUBLIC_HEADER
 	global.hpp
 	multi.hpp
 	easy.hpp
+	list.hpp
 	uvw_curl.hpp
 	create_lock.hpp
 	log.hpp
