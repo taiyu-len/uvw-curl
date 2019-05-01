@@ -1,0 +1,2 @@
+add_executable(print_headers print_headers.cpp)
+target_link_libraries(print_headers PRIVATE uvw_curl)
