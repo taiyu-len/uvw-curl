@@ -1,8 +1,8 @@
 #include "uvw_curl.hpp"
 #include "log.hpp"
+#include <iomanip>
 #include <iostream>
 #include <thread>
-#include <iomanip>
 
 static void add_download(const char* url, uvw_curl::Multi &m) {
 	using namespace uvw_curl;

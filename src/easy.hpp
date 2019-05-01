@@ -117,6 +117,12 @@ struct Easy
 
 	std::array<char, CURL_ERROR_SIZE>
 		error_buffer;
+
+	/**
+	 * Pointer to owning multi handle
+	 */
+	std::shared_ptr<Multi>
+		multi;
 private:
 	friend Multi;
 
@@ -132,11 +138,6 @@ private:
 	 */
 	std::shared_ptr<Easy>
 		_self;
-	/**
-	 * Pointer to owning multi handle
-	 */
-	std::shared_ptr<Multi>
-		_multi;
 };
 }
 

@@ -13,7 +13,7 @@ string(APPEND CLANG_TIDY_CHECKS ,-hicpp-no-array-decay) # allow __file__ macro
 string(APPEND CLANG_TIDY_CHECKS ,-cppcoreguidelines-pro-bounds-array-to-pointer-decay) # same
 string(APPEND CLANG_TIDY_CHECKS ,-cppcoreguidelines-pro-bounds-pointer-arithmetic) # allow argv[i]
 
-set(CMAKE_CXX_CLANG_TIDY clang-tidy "-checks=${CLANG_TIDY_CHECKS}")
+#set(CMAKE_CXX_CLANG_TIDY clang-tidy "-checks=${CLANG_TIDY_CHECKS}")
 add_library(uvw_curl STATIC)
 add_subdirectory(src)  # handles library source files
 add_subdirectory(test) # handles tests

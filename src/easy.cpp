@@ -1,5 +1,4 @@
 #include "easy.hpp"
-#include "multi.hpp"
 
 namespace uvw_curl
 {
@@ -48,7 +47,7 @@ void Easy::header_events(bool x) noexcept
 #define SET_OPT(name, code, type, arg_type) \
 void Easy::name(arg_type x) noexcept { \
 	auto err = curl_easy_setopt(_handle.get(), CURLOPT_##code, type(x)); \
-	if (err != 0) { publish(ErrorEvent{err}); }\
+	if (err) { publish(ErrorEvent{err}); }\
 }
 static auto _get_cstring(zstring x) -> const char*
 {
@@ -83,7 +82,7 @@ SET_OPT(httpauth      , HTTPAUTH       , static_cast<long>, http_auth);
 auto Easy::name() noexcept -> ret_type { \
 	type x; \
 	auto err = curl_easy_getinfo(_handle.get(), CURLINFO_##code, &x); \
-	if (err != 0) { publish(ErrorEvent{err}); } \
+	if (err) { publish(ErrorEvent{err}); } \
 	return ret_type(x); \
 }
 GET_INFO(effective_url    , EFFECTIVE_URL    , char*     , std::string);
@@ -128,8 +127,7 @@ GET_INFO(content_length_upload  , CONTENT_LENGTH_UPLOAD_T  , curl_off_t , curl_o
  */
 void Easy::finish() noexcept
 {
-	auto ptr = shared_from_this();
-	_self.reset();
+	auto ptr = std::move(_self);
 	publish(EndEvent{});
 }
 

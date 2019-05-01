@@ -29,9 +29,9 @@ Context::Context(Key, Multi& multi, curl_socket_t s) noexcept
 		auto err = curl_multi_socket_action(
 			this->multi._handle.get(), this->s, flags,
 			&running_handles);
-		if (err != 0)
+		if (err)
 		{
-			this->multi.publish(ErrorEvent{err});
+			this->multi.publish(Multi::ErrorEvent{err});
 		}
 		this->multi.check_info();
 	});

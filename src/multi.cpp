@@ -55,10 +55,10 @@ bool Multi::init() const noexcept
 
 void Multi::add_handle(std::shared_ptr<Easy> easy) noexcept
 {
-	easy->_multi = shared_from_this();
+	easy->multi = shared_from_this();
 	curl_easy_setopt(easy->_handle.get(), CURLOPT_PRIVATE, easy.get());
 	auto err = curl_multi_add_handle(_handle.get(), easy->_handle.get());
-	if (err != 0)
+	if (err)
 	{
 		publish(ErrorEvent{err});
 	}
@@ -84,7 +84,10 @@ void Multi::check_info() noexcept
 			Easy* easy;
 			curl_easy_getinfo(easy_handle, CURLINFO_PRIVATE, &easy);
 			auto err = curl_multi_remove_handle(_handle.get(), easy_handle);
-			publish(ErrorEvent{err});
+			if (err)
+			{
+				publish(ErrorEvent{err});
+			}
 			easy->finish();
 		}
 	}
@@ -92,14 +95,10 @@ void Multi::check_info() noexcept
 
 void Multi::start_timeout(CURLM*, long timeout, Multi* multi) noexcept
 {
-	if (timeout == -1)
+	if (timeout < 0)
 	{
-		multi->_timer->close();
+		multi->_timer->stop();
 		return;
-	}
-	if (timeout == 0)
-	{
-		timeout = 1;
 	}
 	multi->_timer->start(
 		uvw::TimerHandle::Time(timeout),
