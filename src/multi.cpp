@@ -11,7 +11,7 @@ Multi::Multi(
 	std::shared_ptr<Global> global) noexcept
 : uvw::Emitter<Multi>()
 , std::enable_shared_from_this<Multi>()
-, _handle(curl_multi_init(), &curl_multi_cleanup)
+, _handle(curl_multi_init())
 , _timer(loop->resource<uvw::TimerHandle>())
 , _global(std::move(global))
 {
@@ -135,4 +135,10 @@ int Multi::handle_socket(
 	}
 	return 0;
 }
+
+void Multi::Deleter::operator()(CURLM* m) const noexcept
+{
+	curl_multi_cleanup(m);
+}
+
 } // namespace uvw_curl

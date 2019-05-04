@@ -129,7 +129,7 @@ private:
 	// Callbacks
 	void finish() noexcept;
 
-	using Deleter = void(*)(CURL*);
+	struct Deleter { void operator()(CURL* m) const noexcept; };
 	std::unique_ptr<CURL, Deleter>
 		_handle;
 	/**

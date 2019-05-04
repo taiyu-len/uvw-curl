@@ -43,7 +43,7 @@ private:
 	static void start_timeout(CURLM*, long, Multi*) noexcept;
 	static int handle_socket(CURL*, curl_socket_t, int, Multi*, Context*) noexcept;
 
-	using Deleter = CURLMcode(*)(CURLM *);
+	struct Deleter { void operator()(CURLM* m) const noexcept; };
 	std::unique_ptr<CURLM, Deleter>
 		_handle;
 	std::shared_ptr<uvw::TimerHandle>

@@ -14,7 +14,7 @@ Easy::Easy(Key) noexcept
 : uvw::Emitter<Easy>()
 , std::enable_shared_from_this<Easy>()
 , error_buffer({0})
-, _handle(curl_easy_init(), &curl_easy_cleanup)
+, _handle(curl_easy_init())
 {
 	curl_easy_setopt(_handle.get(), CURLOPT_WRITEFUNCTION, &Callback::write);
 	curl_easy_setopt(_handle.get(), CURLOPT_WRITEDATA, this);
@@ -164,5 +164,10 @@ int Easy::Callback::debug(
 {
 	easy->publish(Easy::DebugEvent{data, size, type});
 	return 0;
+}
+
+void Easy::Deleter::operator()(CURL* m) const noexcept
+{
+	curl_easy_cleanup(m);
 }
 } // namespace uvw_curl
